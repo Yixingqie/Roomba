@@ -1,15 +1,24 @@
 #include <HCSR04.h>
 #include <Servo.h>
 
-const int FRONT_THRESH = 25;
-const int RIGHT_THRESH = 20;
-const int LEFT_THRESH = 20;
-const int DIAG_LEFT_THRESH = 25;
-const int DIAG_RIGHT_THRESH = 25;
+const int FRONT_THRESH = 20;
+const int RIGHT_THRESH = 10;
+const int LEFT_THRESH = 10;
+const int DIAG_LEFT_THRESH = 20;
+const int DIAG_RIGHT_THRESH = 20;
+
+const int SLOWDOWN = 255;
+const int MAX_SPEED = 150;
+const int OFF = 0;
+
+const int ADJUST_PERIOD = 10;
 
 void goStraight();
 void goLeft();
 void goRight();
+
+int goneLeft, goneRight = 0;
+int toggle = 0;
 
 int checkDir(int val, int thresh);
 
@@ -29,73 +38,93 @@ UltraSonicDistanceSensor diagRightSensor(4, A0);
 
 void setup() {
   Serial.begin(9600);
-  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(MOTOR, OUTPUT);
   leftServo.attach(LEFT_SERVO);
   rightServo.attach(RIGHT_SERVO);
-  goStraight();
-  delay(200);
-  digitalWrite(LED_BUILTIN, HIGH);
-
 }
 
 void loop() {
   front = frontSensor.measureDistanceCm();
-  delay(5);
+  delay(1);
   right = rightSensor.measureDistanceCm();
-  delay(5);
+  delay(1);
   left = leftSensor.measureDistanceCm();
-  delay(5);
+  delay(1);
   diagRight = diagRightSensor.measureDistanceCm();
-  delay(5);
+  delay(1);
   diagLeft = diagLeftSensor.measureDistanceCm();
-  delay(5);
+  delay(1);
 
-  Serial.print("Front: ");
-  Serial.println(front);
-  Serial.print("Right: ");
-  Serial.println(right);
-  Serial.print("Left: ");
-  Serial.println(left);
-  Serial.print("DiagLeft: ");
-  Serial.println(diagLeft);
-  Serial.print("DiagRight: ");
-  Serial.println(diagRight);
-  Serial.println();
-  if (checkDir(front, FRONT_THRESH) && checkDir(diagLeft, DIAG_LEFT_THRESH) && checkDir(diagRight, DIAG_RIGHT_THRESH)) {
-    if (left > right) {
-      goLeft();
+  //  Serial.print("Front: ");
+  //  Serial.println(front);
+  //  Serial.print("Right: ");
+  //  Serial.println(right);
+  //  Serial.print("Left: ");
+  //  Serial.println(left);
+  //  Serial.print("DiagLeft: ");
+  //  Serial.println(diagLeft);
+  //  Serial.print("DiagRight: ");
+  //  Serial.println(diagRight);
+  //  Serial.println();
+  int turnLeft = 0;
+  int turnRight = 0;
+  if (checkDir(front, FRONT_THRESH)) {
+    if ((left + diagLeft) > (right + diagRight)) { //Front sensor
+      turnLeft++;
     } else {
-      goRight();
+      turnRight++;
     }
-    delay(50);
-  } else if (checkDir(front, FRONT_THRESH) && (checkDir(left, LEFT_THRESH) || checkDir(diagLeft, DIAG_LEFT_THRESH))) {  //Left Corner
-    goRight();
-    delay(50);
-  } else if (checkDir(front, FRONT_THRESH) && (checkDir(right, RIGHT_THRESH) || checkDir(diagRight, DIAG_RIGHT_THRESH))) {     //Right Corner
-    goLeft();
-    delay(50);
-  } else if (checkDir(left, LEFT_THRESH) || checkDir(diagLeft, DIAG_LEFT_THRESH)) { //Hitting Left Wall
-    goRight();
-    delay(50);
-  } else if (checkDir(right, RIGHT_THRESH) || checkDir(diagRight, DIAG_RIGHT_THRESH)) {         //Hitting Right Wall
-    goLeft();
-    delay(50);
-  } else if (checkDir(front, FRONT_THRESH)) {           //Hitting front Wall
-    if (random(0, 2)) {
-      goLeft();
-    } else {
-      goRight();
-    }
-    delay(50);
-  } else {             //contrinue straight path
-    goStraight();
   }
-  // delay(500);
+  if (checkDir(diagLeft, DIAG_LEFT_THRESH)) {  //Diag Left Sensor
+    turnRight++;
+  }
+  if (checkDir(diagRight, DIAG_RIGHT_THRESH)) {     //Diag Right Corner
+    turnLeft++;
+  }
+  if (checkDir(left, LEFT_THRESH)) { //Left Sensor
+    turnRight++;
+  }
+  if (checkDir(right, RIGHT_THRESH)) {         //Right Sensor
+    turnLeft++;
+  }
+  if (!turnLeft && !turnRight || turnLeft == turnRight) {            //contrinue straight path
+    goStraight();
+    //wiggle();
+    goneLeft = 0;
+    goneRight = 0;
+    analogWrite(MOTOR, MAX_SPEED);
+  } else if (turnRight > turnLeft && !goneRight) {
+    analogWrite(MOTOR, OFF);
+    goRight();
+    delay(ADJUST_PERIOD);
+    analogWrite(MOTOR, MAX_SPEED);
+    goneRight = 1;
+    goneLeft = 0;
+  } else if (turnLeft > turnRight && !goneLeft) {
+    analogWrite(MOTOR, OFF);
+    goLeft();
+    delay(ADJUST_PERIOD);
+    analogWrite(MOTOR, MAX_SPEED);
+    goneLeft = 1;
+    goneRight = 0;
+  }
 }
 
 void goStraight() {
   rightServo.write(80);
   leftServo.write(90);
+}
+
+void wiggle() {
+  if (toggle) {
+    rightServo.write(180);
+    leftServo.write(180);
+  } else {
+    rightServo.write(0);
+    leftServo.write(0);
+  }
+  delay(500);
+  toggle = !toggle;
 }
 
 void goLeft() {
@@ -109,8 +138,9 @@ void goRight() {
 }
 
 int checkDir(int val, int thresh) {
-  if (val <= thresh && val != -1) {
+  if (val <= thresh) {
     return 1;
+  } else {
+    return 0;
   }
-  return 0;
 }
